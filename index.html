@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Black Hole</title>
+<style>
+:root{color-scheme:dark}
+html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:ui-monospace,Menlo,monospace;color:#ece8e1}
+canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}.g canvas{cursor:grabbing}
+#ui{position:fixed;z-index:3;left:1rem;top:calc(1rem + env(safe-area-inset-top,0px));width:15rem;background:#000b;border:1px solid #ece8e133;padding:.6rem .8rem;backdrop-filter:blur(6px);font-size:.68rem;letter-spacing:.08em;text-transform:uppercase}
+#ui summary{cursor:pointer;padding:.3rem 0;letter-spacing:.2em}#ui label{display:block;color:#a9a39a;margin-top:.5rem}#ui output{float:right;color:#ece8e1}
+#ui input{width:100%;height:1.8rem;margin:0;accent-color:#ff9a4d;cursor:pointer}
+.b{display:flex;gap:.5rem;margin-top:.7rem}.b button{flex:1;min-height:2.6rem;background:none;border:1px solid #ece8e155;color:#ece8e1;font:inherit;cursor:pointer}.b button:hover{background:#ece8e1;color:#000}
+:focus-visible{outline:2px solid #8fc4ff;outline-offset:2px}
+@media(max-width:767px){#ui{left:.6rem;right:.6rem;top:auto;bottom:calc(2.4rem + env(safe-area-inset-bottom,0px));width:auto;max-height:55svh;overflow:auto}}
+#msg{position:fixed;left:0;right:0;bottom:calc(1.2rem + env(safe-area-inset-bottom,0px));text-align:center;font-size:.7rem;letter-spacing:.2em;text-transform:uppercase;color:#a9a39a;pointer-events:none}
+#fb{display:none;position:fixed;inset:0;place-items:center;text-align:center;padding:2rem;font-size:.85rem;background:radial-gradient(circle at 50% 50%,#000 0 8%,#ff9a4d 9%,#3a1404 16%,#000 45%)}
+.nogl #fb{display:grid}
+</style>
+</head>
+<body>
+<canvas id="gl" aria-label="Animated black hole with a rotating accretion disk and gravitational lensing" role="img"></canvas>
+<div id="ui"><details open><summary>Controls</summary><div id="ctl"></div><div class="b"><button id="pz">Pause</button><button id="rs">Reset</button></div></details></div>
+<div id="msg">Drag to orbit · scroll or pinch to zoom · Space to pause</div>
+<div id="fb">WebGL is unavailable in this browser, so the animation can't run.</div>
+<script>
+const Q={spd:1,br:1,lens:1,dop:1,glow:1,stars:1,tilt:12};let paused=false;
+const VS='attribute vec2 a;void main(){gl_Position=vec4(a,0.,1.);}';
+const FS=`#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+uniform vec2 R;uniform float T,dist,elev,yaw,br,lens,dop,glow,stars;uniform int steps;
+float h(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float vn(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(h(i),h(i+vec2(1,0)),f.x),mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x),f.y);}
+vec3 sky(vec3 d){vec2 u=vec2(atan(d.z,d.x),asin(clamp(d.y,-1.,1.)));vec3 c=vec3(0.);
+ for(int k=0;k<2;k++){float s=k==0?70.:150.;vec2 g=u*s,id=floor(g);float r=h(id);
+  if(r>.965){vec2 o=(vec2(h(id+1.),h(id+2.))-.5)*.6;float tw=.75+.25*sin(T*2.+r*90.);
+   float b=smoothstep(.3,0.,length(fract(g)-.5-o))*(r-.965)*28.*tw;
+   c+=b*mix(vec3(.7,.8,1.),vec3(1.,.85,.7),h(id+3.));}}
+ return c+vec3(.004,.005,.01);}
+void main(){
+ vec2 uv=(gl_FragCoord.xy-.5*R)/R.y;float e=radians(elev);
+ vec3 ro=dist*vec3(cos(e)*sin(yaw),sin(e),cos(e)*cos(yaw));
+ vec3 f=normalize(-ro),rt=normalize(cross(f,vec3(0,1,0))),up=cross(rt,f);
+ vec3 v=normalize(f*1.7+rt*uv.x+up*uv.y),p=ro;
+ vec3 col=vec3(0.);float tr=1.,minr=1e3;bool hit=false;
+ for(int i=0;i<110;i++){
+  if(i>=steps)break;
+  float r=length(p);minr=min(minr,r);
+  if(r<1.){hit=true;break;}
+  if(r>26.&&dot(p,v)>0.)break;
+  float dt=clamp(.07*r,.03,1.6);
+  vec3 cr=cross(p,v);float r2=r*r;
+  vec3 a=-1.5*lens*dot(cr,cr)*p/(r2*r2*r);
+  vec3 np=p+v*dt;v=normalize(v+a*dt);
+  if(p.y*np.y<0.){
+   float t=p.y/(p.y-np.y);vec3 q=mix(p,np,t);float rc=length(q.xz);
+   if(rc>3.&&rc<9.5){
+    float an=atan(q.z,q.x),ph=an-T*2.5/pow(rc,1.5);
+    float n=vn(vec2(ph*3.+rc*1.5,rc*4.))*.6+vn(vec2(ph*8.,rc*10.))*.4;
+    float edge=smoothstep(3.,3.5,rc)*(1.-smoothstep(6.5,9.5,rc));
+    float tp=pow(3./rc,.75);
+    vec3 c=mix(vec3(1.,.28,.05),vec3(1.,.92,.8),smoothstep(.35,1.,tp));
+    vec3 vd=normalize(vec3(-q.z,0.,q.x));float beta=min(.6,.7/sqrt(rc));
+    float cs=dot(vd,-v);float g=max(1.+beta*cs*dop,.25);
+    c=mix(c,c*vec3(.75,.95,1.3),clamp(cs*dop,0.,1.));c=mix(c,c*vec3(1.2,.8,.55),clamp(-cs*dop,0.,1.));
+    col+=c*pow(g,3.)*(.3+n)*edge*br*2.2*tr;tr*=1.-.6*edge;}
+  }
+  p=np;}
+ if(!hit)col+=sky(v)*stars*tr*1.4;
+ if(!hit)col+=vec3(1.,.75,.5)*exp(-abs(minr-1.55)*12.)*glow*.45*tr;
+ col+=vec3(.9,.45,.2)*glow*.05*exp(-(minr-1.)*.7)*tr;
+ col=1.-exp(-col*1.3);col*=1.-.4*dot(uv,uv);
+ gl_FragColor=vec4(pow(col,vec3(.92)),1.);}`;
+const cv=document.getElementById('gl'),RM=matchMedia('(prefers-reduced-motion:reduce)').matches,mob=innerWidth<768;
+let gl=null;try{gl=cv.getContext('webgl',{antialias:false,alpha:false})||cv.getContext('experimental-webgl')}catch(e){}
+const U={};let scale=mob?.6:.85,steps=mob?60:100,running=true;
+function fail(why){gl=null;running=false;console.warn(why);start2D(why)}
+function start2D(why){
+ const c=document.createElement('canvas');cv.replaceWith(c);
+ const m=document.getElementById('msg');m.style.opacity=1;m.style.padding='0 1rem';
+ m.textContent='WebGL unavailable'+(why?' ('+String(why).replace(/\s+/g,' ').slice(0,110)+')':'')+' · simplified 2D version';
+ const x=c.getContext('2d');if(!x){document.documentElement.classList.add('nogl');return}
+ let W,H,D,S0;
+ const rs=()=>{D=Math.min(devicePixelRatio||1,2);W=c.width=innerWidth*D;H=c.height=innerHeight*D;S0=Math.min(W,H)*(W<H?.05:.042)};
+ rs();addEventListener('resize',rs);
+ const st=[...Array(350)].map(()=>({x:Math.random(),y:Math.random(),r:Math.random(),p:Math.random()*9}));
+ const pa=[...Array(mob?900:1600)].map(()=>({r:3+Math.pow(Math.random(),1.6)*6.5,a:Math.random()*6.283,b:.4+Math.random()*.6}));
+ let t=0,l=performance.now();
+ requestAnimationFrame(function f(now){
+  const dt=Math.min((now-l)/1000,.1);l=now;t+=dt;
+  const S=S0*(17/dTarget),E=Q.tilt*Math.PI/180+(RM?0:.04*Math.sin(t*.12)),sE=Math.max(.03,Math.sin(E)),cx=W/2,cy=H/2;
+  x.globalCompositeOperation='source-over';x.fillStyle='#000';x.fillRect(0,0,W,H);
+  for(const s of st){const b=Q.stars*(.25+.6*s.r*(.7+.3*Math.sin(t*2+s.p)));x.fillStyle='rgba(220,230,255,'+b+')';x.fillRect(s.x*W,s.y*H,(1+s.r)*D*.8,(1+s.r)*D*.8)}
+  const hg=x.createRadialGradient(cx,cy,S*2.4,cx,cy,S*6);hg.addColorStop(0,'rgba(255,150,70,'+.28*Q.glow+')');hg.addColorStop(1,'rgba(255,150,70,0)');
+  x.globalCompositeOperation='lighter';x.fillStyle=hg;x.fillRect(0,0,W,H);
+  const z=D*1.7,dot=(px,py,r,g,b,a)=>{x.fillStyle='rgba('+r+','+g+','+b+','+a+')';x.fillRect(px-z/2,py-z/2,z,z)};
+  for(const pass of [0,1])for(const p of pa){
+   if(pass==0&&!paused)p.a+=dt*2.6*Q.spd/Math.pow(p.r,1.5)*(RM?.15:1);
+   const c0=Math.cos(p.a),s0=Math.sin(p.a),far=s0<0;
+   const tp=Math.pow(3/p.r,.75),g=1+Math.min(.6,.7/Math.sqrt(p.r))*c0*Q.dop;
+   const I=Math.min(1,Q.br*Math.pow(g,3)*p.b*Math.min(1,(p.r-2.8)*.9)*(p.r>8?(9.5-p.r)/1.5:1));
+   const R=Math.round(255-Math.max(0,c0)*60),G=Math.round((105+tp*140)*(c0<0?.85:1)),B=Math.round(30+tp*170+Math.max(0,c0)*70);
+   if(pass==0){
+    const rho=2.75+.3*(p.r-3);
+    if(far){dot(cx+p.r*c0*S,cy+p.r*s0*sE*S,R,G,B,I*.9);dot(cx+rho*c0*S,cy+rho*s0*S*.95,R,G,B,I*.55*Math.min(1,Q.lens))}
+    else dot(cx+rho*c0*S,cy+rho*s0*S*.9,R,G,B,I*.25*Math.min(1,Q.lens));
+   }else if(!far)dot(cx+p.r*c0*S,cy+p.r*s0*sE*S,R,G,B,I*.9);
+   if(pass==0&&p===pa[pa.length-1]){
+    x.globalCompositeOperation='source-over';x.fillStyle='#000';x.beginPath();x.arc(cx,cy,S*2.6,0,6.3);x.fill();
+    x.globalCompositeOperation='lighter';x.strokeStyle='rgba(255,200,140,'+.65*Math.min(1,Q.glow)+')';x.lineWidth=1.6*D;x.beginPath();x.arc(cx,cy,S*2.65,0,6.3);x.stroke();
+   }
+  }
+  requestAnimationFrame(f)});
+}
+function sh(t,s){const x=gl.createShader(t);gl.shaderSource(x,s);gl.compileShader(x);if(!gl.getShaderParameter(x,gl.COMPILE_STATUS))throw gl.getShaderInfoLog(x);return x}
+if(!gl)fail('no WebGL context');else try{
+ const pr=gl.createProgram();gl.attachShader(pr,sh(gl.VERTEX_SHADER,VS));gl.attachShader(pr,sh(gl.FRAGMENT_SHADER,FS));gl.linkProgram(pr);
+ if(!gl.getProgramParameter(pr,gl.LINK_STATUS))throw 'link';gl.useProgram(pr);
+ gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,3,-1,-1,3]),gl.STATIC_DRAW);
+ const l=gl.getAttribLocation(pr,'a');gl.enableVertexAttribArray(l);gl.vertexAttribPointer(l,2,gl.FLOAT,false,0,0);
+ 'R T dist elev yaw steps br lens dop glow stars'.split(' ').forEach(n=>U[n]=gl.getUniformLocation(pr,n));
+ cv.addEventListener('webglcontextlost',e=>{e.preventDefault();fail('context lost')});
+}catch(e){fail(e)}
+function resize(){if(!gl)return;const d=Math.min(devicePixelRatio||1,mob?1:1.5)*scale;
+ cv.width=Math.max(2,innerWidth*d|0);cv.height=Math.max(2,innerHeight*d|0);gl.viewport(0,0,cv.width,cv.height)}
+addEventListener('resize',resize);resize();
+let yaw=0,dragYaw=0,dragEl=0,dist=mob?22:17,dTarget=dist,tD=0,clock=0,last=performance.now(),down=false,px=0,py=0,slow=0,n=0;
+const msg=document.getElementById('msg'),ui=document.getElementById('ui'),sl={},out={},dd=document.getElementById('ctl');
+const cl=(v,a,b)=>Math.max(a,Math.min(b,v)),own=e=>ui.contains(e.target);
+const DEF={spd:1,br:1,lens:1,dop:1,glow:1,stars:1};
+const CT=[['spd','Disk speed',0,3,.05],['br','Brightness',0,2.5,.05],['lens','Lensing',0,2,.05],['dop','Doppler',0,1.6,.05],['glow','Glow',0,3,.05],['stars','Stars',0,2,.05],['tilt','Tilt',0,80,1],['dist','Distance',6,30,.5]];
+function setTilt(v){Q.tilt=cl(v,0,80);sl.tilt.value=Q.tilt;out.tilt.textContent=Math.round(Q.tilt)+'°'}
+function setDist(v){dTarget=cl(v,6,30);sl.dist.value=dTarget;out.dist.textContent=dTarget.toFixed(1)}
+CT.forEach(c=>{const d=document.createElement('div'),k=c[0];
+ d.innerHTML='<label for="s_'+k+'">'+c[1]+'<output></output></label><input id="s_'+k+'" type="range" min="'+c[2]+'" max="'+c[3]+'" step="'+c[4]+'" aria-label="'+c[1]+'">';
+ sl[k]=d.querySelector('input');out[k]=d.querySelector('output');dd.appendChild(d);
+ sl[k].addEventListener('input',()=>{const v=+sl[k].value;if(k=='tilt')setTilt(v);else if(k=='dist')setDist(v);else{Q[k]=v;out[k].textContent=v.toFixed(2)+'×'}})});
+function reset(){Object.assign(Q,DEF);Object.keys(DEF).forEach(k=>{sl[k].value=Q[k];out[k].textContent=Q[k].toFixed(2)+'×'});dragYaw=0;setTilt(12);setDist(mob?22:17)}
+const pz=document.getElementById('pz');function tp(){paused=!paused;pz.textContent=paused?'Play':'Pause'}
+pz.onclick=tp;document.getElementById('rs').onclick=reset;
+addEventListener('keydown',e=>{if(e.code=='Space'&&!/INPUT|BUTTON|SUMMARY/.test(e.target.tagName)){e.preventDefault();tp()}});
+if(mob)ui.querySelector('details').open=false;
+reset();
+let pinch=0,pinching=false;
+addEventListener('pointerdown',e=>{if(own(e))return;down=true;px=e.clientX;py=e.clientY;document.body.classList.add('g');msg.style.opacity=0});
+addEventListener('pointermove',e=>{if(!down||pinching)return;dragYaw-=(e.clientX-px)*.005;setTilt(Q.tilt+(e.clientY-py)*.15);px=e.clientX;py=e.clientY});
+['pointerup','pointercancel'].forEach(t=>addEventListener(t,()=>{down=false;document.body.classList.remove('g')}));
+addEventListener('wheel',e=>{if(own(e))return;e.preventDefault();setDist(dTarget+e.deltaY*.01)},{passive:false});
+addEventListener('touchmove',e=>{pinching=e.touches.length==2;if(pinching){const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);if(pinch)setDist(dTarget-(d-pinch)*.05);pinch=d}},{passive:true});
+addEventListener('touchend',()=>{pinch=0;pinching=false});
+document.addEventListener('visibilitychange',()=>{running=!document.hidden&&!!gl;if(running){last=performance.now();requestAnimationFrame(frame)}});
+function frame(now){
+ if(!running||!gl)return;
+ const dt=Math.min((now-last)/1000,.1);last=now;if(!paused)clock+=dt;
+ tD+=paused?0:dt*Q.spd*(RM?.15:1);
+ const drift=RM?0:clock*.05;           // slow camera orbit
+ const bob=RM?0:Math.sin(clock*.12)*6;  // gentle tilt breathing
+ dist+=(dTarget-dist)*(1-Math.exp(-dt*4));
+ gl.uniform2f(U.R,cv.width,cv.height);gl.uniform1f(U.T,tD);gl.uniform1f(U.dist,dist);
+ gl.uniform1f(U.elev,Math.max(0,Math.min(80,Q.tilt+bob)));gl.uniform1f(U.yaw,drift+dragYaw);gl.uniform1i(U.steps,steps);gl.uniform1f(U.br,Q.br);gl.uniform1f(U.lens,Q.lens);gl.uniform1f(U.dop,Q.dop);gl.uniform1f(U.glow,Q.glow);gl.uniform1f(U.stars,Q.stars);
+ gl.drawArrays(gl.TRIANGLES,0,3);
+ if(dt>.03)slow++;else slow=Math.max(0,slow-1);
+ if(++n%45==0&&slow>25&&scale>.35){scale*=.85;slow=0;resize()}
+ requestAnimationFrame(frame)}
+if(gl)requestAnimationFrame(frame);
+</script>
+</body>
+</html>
